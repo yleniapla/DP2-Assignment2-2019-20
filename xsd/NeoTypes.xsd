@@ -1,7 +1,54 @@
-<?xml version="1.0"?>
-<xsd:schema  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-
-    <xsd:complexType name="path">
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+	
+	<xsd:complexType name="MyNode">
+		<xsd:sequence>
+			<xsd:element name="id" type="xsd:int" minOccurs="1" maxOccurs="1" />
+			<xsd:element name="self" type="xsd:anyURI" minOccurs="1" maxOccurs="1" />
+			<xsd:element name="data" type="MyNodeBody" minOccurs="1" maxOccurs="1" />
+			
+		</xsd:sequence>
+	</xsd:complexType>
+	
+	<xsd:complexType name="MyNodeBody">
+		<xsd:sequence>
+			<xsd:element name="metadata">
+				<xsd:complexType>
+						<xsd:sequence>
+						 	<xsd:element name="id" type="xsd:nonNegativeInteger"></xsd:element>
+						 	<xsd:element name="labels" type="xsd:anyURI" minOccurs="0" maxOccurs="unbounded" />
+						</xsd:sequence>
+					</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="data">
+				<xsd:complexType>
+					<xsd:sequence>
+						<xsd:element name="title" type="xsd:string" />
+					</xsd:sequence>
+				</xsd:complexType>
+			</xsd:element>	
+		</xsd:sequence>
+	</xsd:complexType>
+	
+	<xsd:element name="MyRelationship"> 
+	<xsd:complexType>
+		<xsd:sequence>
+			<xsd:element name="type" type="xsd:string" minOccurs="1" maxOccurs="1" />
+			<xsd:element name="to" type="xsd:anyURI" minOccurs="1" maxOccurs="1" />
+		</xsd:sequence>
+	</xsd:complexType>
+	</xsd:element>
+	
+	<xsd:complexType name="MyRelationshipBody">
+		<xsd:sequence>
+			<xsd:element name="metadata" type="xsd:positiveInteger" minOccurs="1" maxOccurs="1" />
+			<xsd:element name="self" type="xsd:anyURI" />
+			<xsd:element name="start" type="xsd:anyURI" />
+			<xsd:element name="end" type="xsd:anyURI" />
+		</xsd:sequence>
+	</xsd:complexType>
+	
+	<xsd:complexType name="MyPath">
       <xsd:sequence>
         <xsd:element name="start" type="xsd:anyURI"/>
         <xsd:element name="end" type="xsd:anyURI"/>
@@ -11,7 +58,7 @@
       </xsd:sequence>
     </xsd:complexType>
 	  
-	<xsd:complexType name="pathReq">
+	<xsd:complexType name="MyPathReq">
 		<xsd:sequence>
 			<xsd:element name="to" type="xsd:anyURI" />
 			<xsd:element name="max_depth" type="xsd:positiveInteger" />
@@ -27,50 +74,4 @@
 		</xsd:sequence>
 	</xsd:complexType>
 	
-	<xsd:complexType name="Node">
-		<xsd:sequence>
-			<xsd:element name="id" type="xsd:string" minOccurs="1" maxOccurs="1" />
-			<xsd:element name="title" type="xsd:string" minOccurs="1" maxOccurs="1" />
-		</xsd:sequence>
-	</xsd:complexType>
-	
-	<xsd:element name="Relationship">
-	<xsd:complexType>
-		<xsd:sequence>
-			<xsd:element name="type" type="xsd:string" minOccurs="1" maxOccurs="1" />
-			<xsd:element name="to" type="xsd:anyURI" minOccurs="1" maxOccurs="1" />
-		</xsd:sequence>
-	</xsd:complexType>
-	</xsd:element>
-	
-	<xsd:complexType name="NodeBody">
-		<xsd:sequence>
-			<xsd:element name="metadata">
-				<xsd:complexType>
-						<xsd:sequence>
-						 	<xsd:element name="id" type="xsd:nonNegativeInteger"></xsd:element>
-						</xsd:sequence>
-					</xsd:complexType>
-			</xsd:element>
-			<xsd:element name="data">
-				<xsd:complexType>
-					<xsd:sequence>
-						<xsd:element name="id" type="xsd:string" />
-					</xsd:sequence>
-				</xsd:complexType>
-			</xsd:element>	
-			<xsd:element name="self" type="xsd:anyURI" />	
-		</xsd:sequence>
-	</xsd:complexType>
-	
-	<xsd:complexType name="RelationshipBody">
-		<xsd:sequence>
-			<xsd:element name="metadata" type="xsd:positiveInteger" minOccurs="1" maxOccurs="1" />
-			<xsd:element name="self" type="xsd:anyURI" />
-			<xsd:element name="start" type="xsd:anyURI" />
-			<xsd:element name="end" type="xsd:anyURI" />
-		</xsd:sequence>
-	</xsd:complexType>
-	
-
 </xsd:schema>
