@@ -41,7 +41,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	private Map<URI, ItemReader> UriToItem; // map URI-Item
 	private Set<URI> relations; // all relations in the system
 
-	public CitationFinder(Properties prop) throws BibReaderException {
+	public CitationFinder(Properties prop) throws BibReaderException, UnknownItemException {
 		
 		if(prop.getProperty("it.polito.dp2.BIB.ass2.URL")==null || prop.getProperty("it.polito.dp2.BIB.ass2.PORT")==null){
 			throw new BibReaderException();
@@ -98,28 +98,51 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			if(maxDepth<=0)
 				maxDepth = Integer.MAX_VALUE;
 			
-			pathR.getReturnFilter().setLanguage("javascript");
-			pathR.getReturnFilter().setBody("position.length()<"+maxDepth);
+			MyPathReq.PruneEvaluator pe = new MyPathReq.PruneEvaluator();
+			MyPathReq.ReturnFilter rf = new MyPathReq.ReturnFilter();
+			MyPathReq.Relationships r = new MyPathReq.Relationships();
 			
-			pathR.getPruneEvaluator().setName("none");
-			pathR.getPruneEvaluator().setLanguage("builtin");
+			
+			rf.setLanguage("javascript");
+			rf.setBody("position.length()<"+maxDepth);
+			
+			pe.setName("none");
+			pe.setLanguage("builtin");
+			
+			r.setDirection("out");
+			r.setType("CitedBy");
+			
+			pathR.setPruneEvaluator(pe);
+			pathR.setReturnFilter(rf);
+			pathR.setRelationships(r);
+			pathR.setOrder("depth_first");
 			
 			int id = 0;
 
 			if (item instanceof ArticleReader) {
+				
+				ArticleReader a = (ArticleReader) item;
 
-				id = myHash(((ArticleReader) item).getJournal().getTitle(),
-						((ArticleReader) item).getIssue().getYear());
+				id = myHash(a.getJournal().getTitle(),
+						(a.getJournal().getISSN()));
 
 			} else if (item instanceof BookReader) {
 
-				id = myHash(item.getTitle(), ((BookReader) item).getYear());
+				BookReader b = (BookReader) item;
+				
+				id = myHash(b.getTitle(), b.getISBN());
 
 			}
 			
+			URI uri = this.itemToUri.get(id);
+			
+			System.out.println("ID TRAVERSE: " + uri.toString());
+			
 			Response resp;
-			WebTarget target = this.client.target(UriBuilder.fromUri(serviceBaseUri+"/data/node/" + 
-					id+ "/traverse/node"));
+			/*WebTarget target = this.client.target(UriBuilder.fromUri(serviceBaseUri+"/data/node/" + 
+					id+ "/traverse/node"));*/
+			
+			WebTarget target = this.client.target(UriBuilder.fromUri(uri + "/traverse/node"));
 						
 			resp = target	
 					.request(MediaType.APPLICATION_JSON)  
@@ -131,7 +154,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	
 			
 			
-			MyPath citationPath = resp.readEntity(new GenericType<MyPath>(){});
+			MyPath[] citationPath = resp.readEntity(MyPath[].class);
 			
 			if(citationPath == null)
 			{
@@ -140,8 +163,9 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			
 			Set<ItemReader> set = new HashSet<ItemReader>();
 			
-			for(String s : citationPath.getSelf())
+			for(MyPath p : citationPath)
 			{
+				String s = p.getSelf();
 				set.add(this.UriToItem.get(s));
 			}
 			
@@ -152,7 +176,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 		
 	}
 
-	protected void loadGraph(Set<ItemReader> itemList) {
+	protected void loadGraph(Set<ItemReader> itemList) throws UnknownItemException {
 		if (itemList != null) {
 			// load nodes and relations
 			loadNodes(itemList);
@@ -161,22 +185,28 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 		return;
 	}
 
-	protected void loadNodes(Set<ItemReader> itemList) {
+	protected void loadNodes(Set<ItemReader> itemList) throws UnknownItemException {
 		System.out.println("CARICO I NODI");
 		for (ItemReader reader : itemList) { // each place
 			MyNode node = new MyNode(); // new node
 
 			int id = 0;
-
+			
 			if (reader instanceof ArticleReader) {
+				
+				ArticleReader a = (ArticleReader) reader;
 
-				id = myHash(((ArticleReader) reader).getJournal().getTitle(),
-						((ArticleReader) reader).getIssue().getYear());
+				id = myHash(a.getJournal().getTitle(),
+						(a.getJournal().getISSN()));
 
 			} else if (reader instanceof BookReader) {
 
-				id = myHash(reader.getTitle(), ((BookReader) reader).getYear());
+				BookReader b = (BookReader) reader;
+				
+				id = myHash(b.getTitle(), b.getISBN());
 
+			} else {
+				throw new UnknownItemException();
 			}
 
 			node.setId(id);
@@ -185,7 +215,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 			result = insertNode(node); // insertion in Neo4j
 
-			System.out.println("NODO: " + result.getSelf());
+			// System.out.println("NODO: " + result.getSelf());
 			
 			this.itemToUri.put(id, URI.create(result.getSelf()));
 			this.UriToId.put(URI.create(result.getSelf()), id); // add it to the
@@ -198,7 +228,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 	protected MyNodeBody insertNode(MyNode n) {
 
-		System.out.println(serviceBaseUri + "/data/node");
+		// System.out.println(serviceBaseUri + "/data/node");
 		
 		WebTarget target = this.client
 				.target(UriBuilder.fromUri(serviceBaseUri +/* ":" + serviceBasePort +*/ "/data/node"));
@@ -228,24 +258,44 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 				MyRelationship relationship = new MyRelationship(); // new
 																	// relationship
 				int id = 0;
+				int idf = 0;
 
 				if (ci instanceof ArticleReader) {
+					
+					ArticleReader a = (ArticleReader) ci;
 
-					id = myHash(((ArticleReader) ci).getJournal().getTitle(),
-							((ArticleReader) ci).getIssue().getYear());
+					id = myHash(a.getJournal().getTitle(),
+							(a.getJournal().getISSN()));
 
 				} else if (ci instanceof BookReader) {
 
-					id = myHash(ci.getTitle(), ((BookReader) ci).getYear());
+					BookReader b = (BookReader) ci;
+					
+					id = myHash(b.getTitle(), b.getISBN());
+
+				}
+
+				if (i instanceof ArticleReader) {
+					
+					ArticleReader a = (ArticleReader) i;
+
+					idf = myHash(a.getJournal().getTitle(),
+							(a.getJournal().getISSN()));
+
+				} else if (i instanceof BookReader) {
+
+					BookReader b = (BookReader) i;
+					
+					idf = myHash(b.getTitle(), b.getISBN());
 
 				}
 				
-				String fid = this.idToNode.get(id).getSelf();
+				String fromid = this.idToNode.get(idf).getSelf();
 
 				URI uri = this.itemToUri.get(id); // URI of next place
 				relationship.setTo(uri.toString()); // set to
 				relationship.setType("CitedBy"); // connection type
-				MyRelationshipBody result = insertRelationship(relationship, fid); // insertion
+				MyRelationshipBody result = insertRelationship(relationship, fromid); // insertion
 																					// in
 																					// Neo4j
 
@@ -264,7 +314,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 		Response res;
 		MyRelationshipBody rb;
 		
-		System.out.println("URI RELAZIONI:  " + id + "/relationships");
+		// System.out.println("URI RELAZIONI:  " + id + "/relationships");
 
 		WebTarget target = this.client.target(UriBuilder.fromUri(
 				/*serviceBaseUri + ":" + serviceBasePort + "/data/node/" + String.valueOf(id) */ id + "/relationships"));
@@ -278,22 +328,14 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 		return rb;
 	}
 
-	private int myHash(String title, int year) {
+	private int myHash(String title, String code) {
 		int hash = 7;
 		int hash1 = 0;
 		for (int i = 0; i < title.length(); i++) {
 			hash1 += 32 * hash + title.charAt(i);
 		}
-		return (hash1 * year);
+		return (hash1 * code.hashCode());
 	}
 
-	private int myIssueHash(int number, int year) {
-		int hash = 7;
-		int hash1 = 0;
-		for (int i = 0; i < number; i++) {
-			hash1 += 32 * hash + i;
-		}
-		return (hash1 * year);
-	}
 
 }
