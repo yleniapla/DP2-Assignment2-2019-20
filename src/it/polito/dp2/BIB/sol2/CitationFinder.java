@@ -1,11 +1,14 @@
 package it.polito.dp2.BIB.sol2;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.net.URI;
 
 import it.polito.dp2.BIB.ArticleReader;
@@ -21,7 +24,6 @@ import it.polito.dp2.BIB.ass2.UnknownItemException;
 import it.polito.dp2.BIB.sol2.jaxb.*;
 
 import javax.ws.rs.client.*;
-import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
@@ -98,24 +100,13 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			if(maxDepth<=0)
 				maxDepth = Integer.MAX_VALUE;
 			
-			MyPathReq.PruneEvaluator pe = new MyPathReq.PruneEvaluator();
-			MyPathReq.ReturnFilter rf = new MyPathReq.ReturnFilter();
 			MyPathReq.Relationships r = new MyPathReq.Relationships();
-			
-			
-			rf.setLanguage("javascript");
-			rf.setBody("position.length()<"+maxDepth);
-			
-			pe.setName("none");
-			pe.setLanguage("builtin");
 			
 			r.setDirection("out");
 			r.setType("CitedBy");
-			
-			pathR.setPruneEvaluator(pe);
-			pathR.setReturnFilter(rf);
+
 			pathR.setRelationships(r);
-			pathR.setOrder("depth_first");
+			pathR.setMaxDepth(maxDepth);
 			
 			int id = 0;
 
@@ -152,9 +143,13 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			if(resp == null || resp.getStatus()!=200)
 				throw new ServiceException();
 	
-			
+			for(Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()){
+				System.out.println("URI: " + es.getKey() + " TITOLO: " + es.getValue().getTitle() + " SOTTOTIT: " + es.getValue().getSubtitle());
+			}
 			
 			MyPath[] citationPath = resp.readEntity(MyPath[].class);
+			
+			System.out.println("LUNGHEZZA RISP: " + citationPath.length);
 			
 			if(citationPath == null)
 			{
@@ -162,14 +157,31 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			}
 			
 			Set<ItemReader> set = new HashSet<ItemReader>();
+			List<ItemReader> list = new ArrayList<ItemReader>();
 			
-			for(MyPath p : citationPath)
+			for(int i=0; i<citationPath.length; i++)
 			{
-				String s = p.getSelf();
-				set.add(this.UriToItem.get(s));
+				String s = citationPath[i].getSelf();
+				System.out.println("EL " + i + " : " + s);
+				
+//				if(this.UriToItem.get(s).getTitle()!=null)
+//					System.out.println("TITOLO: " + this.UriToItem.get(s).getTitle());
+//				if(this.UriToItem.get(s).getSubtitle()!=null)
+//					System.out.println("SUB: " + this.UriToItem.get(s).getSubtitle());
+				
+					list.add(this.UriToItem.get(s));
+				/*if (set.add(this.UriToItem.get(s)))	
+					System.out.println("CIT: " + i);
+				else
+					System.out.println("NON HA AGGIUNTO: " + set.size());
+				*/
+				
 			}
+			System.out.println("LUNGHEZZA LISTA: " + list.size());
+//			Set<ItemReader> hSet = new TreeSet<ItemReader>(list); 
+//			System.out.println("LUNGHEZZA SET: " + hSet.size());
 			
-			return set;
+			return list.stream().collect(Collectors.toSet());
 		}
 		else
 			throw new UnknownItemException();
@@ -182,6 +194,11 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			loadNodes(itemList);
 			loadRelationships(itemList);
 		}
+		
+//		for(Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()){
+//			System.out.println("URI: " + es.getKey() + " TITOLO: " + es.getValue().getTitle() + " SOTTOTIT: " + es.getValue().getSubtitle());
+//		}
+		
 		return;
 	}
 
@@ -198,18 +215,24 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 				id = myHash(a.getJournal().getTitle(),
 						(a.getJournal().getISSN()));
+				
+				node.setCode(a.getJournal().getISSN());
 
 			} else if (reader instanceof BookReader) {
 
 				BookReader b = (BookReader) reader;
 				
 				id = myHash(b.getTitle(), b.getISBN());
+				
+				node.setCode(b.getISBN());
 
 			} else {
 				throw new UnknownItemException();
 			}
 
 			node.setId(id);
+			node.setTitle(reader.getTitle());
+			node.setSubtitle(reader.getSubtitle());
 
 			MyNodeBody result;
 
