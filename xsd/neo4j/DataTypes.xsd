@@ -76,6 +76,12 @@
     <xsd:complexType name="MyPath">
       <xsd:sequence>
         <xsd:element name="self" type="xsd:anyURI" minOccurs="1" maxOccurs="1"/>
+        <xsd:element name="data" minOccurs="1" maxOccurs="1">
+					<xsd:complexType>
+						<xsd:attribute name="title" type="xsd:string" use="required" />
+						<xsd:attribute name="subtitle" type="xsd:string" use="required" />
+					</xsd:complexType>
+				</xsd:element>
       </xsd:sequence>
     </xsd:complexType>
 	  

@@ -1,6 +1,7 @@
 package it.polito.dp2.BIB.sol2;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -44,32 +45,34 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	private Set<URI> relations; // all relations in the system
 
 	public CitationFinder(Properties prop) throws BibReaderException, UnknownItemException {
-		
-		if(prop.getProperty("it.polito.dp2.BIB.ass2.URL")==null || prop.getProperty("it.polito.dp2.BIB.ass2.PORT")==null){
+
+		if (prop.getProperty("it.polito.dp2.BIB.ass2.URL") == null
+				|| prop.getProperty("it.polito.dp2.BIB.ass2.PORT") == null) {
 			throw new BibReaderException();
 		}
-		
+
 		serviceBaseUri = prop.getProperty("it.polito.dp2.BIB.ass2.URL");
 		serviceBasePort = prop.getProperty("it.polito.dp2.BIB.ass2.PORT");
-		
+
 		this.readFactory = BibReaderFactory.newInstance();
 		this.monitor = this.readFactory.newBibReader();
-		this.client = ClientBuilder.newClient(); 		// create the Client object
-		
+		this.client = ClientBuilder.newClient(); // create the Client object
+
 		this.itemToUri = new HashMap<Integer, URI>();
 		this.UriToId = new HashMap<URI, Integer>();
 		this.idToNode = new HashMap<Integer, MyNodeBody>();
 		this.UriToItem = new HashMap<URI, ItemReader>();
 		this.relations = new HashSet<URI>();
-		
+
 		System.out.println("PARTE IL CARICAMENTO");
 		loadGraph(this.monitor.getItems(null, 0, 9999));
 	}
 
 	@Override
 	public BookReader getBook(String arg0) {
-		//return UriToItem.values().stream().filter(BookReader.class::isInstance).map(BookReader.class::cast)
-				//.filter(b -> b.getISBN() == arg0).findFirst().get();
+		// return
+		// UriToItem.values().stream().filter(BookReader.class::isInstance).map(BookReader.class::cast)
+		// .filter(b -> b.getISBN() == arg0).findFirst().get();
 		return this.monitor.getBook(arg0);
 	}
 
@@ -91,101 +94,154 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	@Override
 	public Set<ItemReader> findAllCitingItems(ItemReader item, int maxDepth)
 			throws UnknownItemException, ServiceException {
-		
-		if(this.UriToItem.containsValue(item))
-		{
-			// System.out.println("SOURCE: " + item.getTitle() + "LENGTH: " + maxDepth);
-			
+
+		if (this.UriToItem.containsValue(item)) {
+			// System.out.println("SOURCE: " + item.getTitle() + "LENGTH: " +
+			// maxDepth);
+
 			MyPathReq pathR = new MyPathReq();
-			if(maxDepth<=0)
+			if (maxDepth <= 0)
 				maxDepth = Integer.MAX_VALUE;
-			
+
 			MyPathReq.Relationships r = new MyPathReq.Relationships();
-			
+
 			r.setDirection("out");
 			r.setType("CitedBy");
 
 			pathR.setRelationships(r);
 			pathR.setMaxDepth(maxDepth);
-			
+
 			int id = 0;
 
 			if (item instanceof ArticleReader) {
-				
+
 				ArticleReader a = (ArticleReader) item;
 
-				id = myHash(a.getJournal().getTitle(),
-						(a.getJournal().getISSN()));
+				id = myHash(a.getJournal().getTitle(), (a.getJournal().getISSN()));
 
 			} else if (item instanceof BookReader) {
 
 				BookReader b = (BookReader) item;
-				
+
 				id = myHash(b.getTitle(), b.getISBN());
 
 			}
-			
+
 			URI uri = this.itemToUri.get(id);
-			
+
 			System.out.println("ID TRAVERSE: " + uri.toString());
-			
+
 			Response resp;
-			/*WebTarget target = this.client.target(UriBuilder.fromUri(serviceBaseUri+"/data/node/" + 
-					id+ "/traverse/node"));*/
-			
+			/*
+			 * WebTarget target =
+			 * this.client.target(UriBuilder.fromUri(serviceBaseUri+
+			 * "/data/node/" + id+ "/traverse/node"));
+			 */
+
 			WebTarget target = this.client.target(UriBuilder.fromUri(uri + "/traverse/node"));
-						
-			resp = target	
-					.request(MediaType.APPLICATION_JSON)  
-					.accept(MediaType.APPLICATION_JSON)
+
+			resp = target.request(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
 					.post(Entity.json(pathR));
 
-			if(resp == null || resp.getStatus()!=200)
+			if (resp == null || resp.getStatus() != 200)
 				throw new ServiceException();
-	
-			for(Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()){
-				System.out.println("URI: " + es.getKey() + " TITOLO: " + es.getValue().getTitle() + " SOTTOTIT: " + es.getValue().getSubtitle());
+
+			for (Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()) {
+				System.out.println("URI: " + es.getKey() + " TITOLO: " + es.getValue().getTitle() + " SOTTOTIT: "
+						+ es.getValue().getSubtitle());
 			}
-			
+
 			MyPath[] citationPath = resp.readEntity(MyPath[].class);
+
+			//List<ItemReader> result = new ArrayList<>();
+			Set<ItemReader> result = new HashSet<>();
+	        for (MyPath node : citationPath) {
+
+	            Set<ItemReader> matchingItems = this.getItems(node.getData().getTitle(), 0, 9999);
+	            if (matchingItems.isEmpty()) throw new UnknownItemException();
+
+	            // useful when duplicated title is present, checking the subtitle (if present)
+	            ItemReader wanted = null;
+	            for (ItemReader temp : matchingItems) {
+	                if (node.getData().getSubtitle() != null && !node.getData().getSubtitle().isEmpty()) {
+	                    if (node.getData().getTitle().equals(temp.getTitle()) && node.getData().getSubtitle().equals(temp.getSubtitle())) {
+	                        wanted = temp;
+	                        result.add(temp);
+	                    }
+	                } else {
+	                    if (node.getData().getTitle().equals(temp.getTitle())) {
+	                        wanted = temp;
+	                        result.add(temp);
+	                    }
+	                }
+	                
+	                
+	            }
+	           
+	           /* boolean found = false;
+	            for (ItemReader inside : result) {
+	                if (inside.getSubtitle() != null && !inside.getSubtitle().isEmpty()
+	                        && wanted.getSubtitle() != null && !wanted.getSubtitle().isEmpty()) {
+	                    if ((inside.getTitle() + "<>" + inside.getSubtitle())
+	                            .equals(wanted.getTitle() + "<>" + wanted.getSubtitle())) {
+	                        found = true;
+	                        break;
+	                    }
+	                } else {
+	                    if (inside.getTitle().equals(wanted.getTitle())) {
+	                        found = true;
+	                        break;
+	                    }
+	                }
+	            }
+	            if (!found) {
+	                result.add(wanted);
+	            }*/
+
+	        }
+	        return result;
 			
-			System.out.println("LUNGHEZZA RISP: " + citationPath.length);
+			///////////////////////////////////////////////////////////////////////////////////////////7
 			
-			if(citationPath == null)
-			{
+			
+			/*System.out.println("LUNGHEZZA RISP: " + citationPath.length);
+
+			if (citationPath == null) {
 				throw new ServiceException();
 			}
-			
-			Set<ItemReader> set = new HashSet<ItemReader>();
+
+			Set<ItemReader> set = new TreeSet<ItemReader>(new comparing());
 			List<ItemReader> list = new ArrayList<ItemReader>();
-			
-			for(int i=0; i<citationPath.length; i++)
-			{
+
+			for (int i = 0; i < citationPath.length; i++) {
 				String s = citationPath[i].getSelf();
 				System.out.println("EL " + i + " : " + s);
+
+				// if(this.UriToItem.get(s).getTitle()!=null)
+				// System.out.println("TITOLO: " +
+				// this.UriToItem.get(s).getTitle());
+				// if(this.UriToItem.get(s).getSubtitle()!=null)
+				// System.out.println("SUB: " +
+				// this.UriToItem.get(s).getSubtitle());
+
+				list.add(this.UriToItem.get(s));
+				set.add(this.UriToItem.get(s));
 				
-//				if(this.UriToItem.get(s).getTitle()!=null)
-//					System.out.println("TITOLO: " + this.UriToItem.get(s).getTitle());
-//				if(this.UriToItem.get(s).getSubtitle()!=null)
-//					System.out.println("SUB: " + this.UriToItem.get(s).getSubtitle());
-				
-					list.add(this.UriToItem.get(s));
-				/*if (set.add(this.UriToItem.get(s)))	
-					System.out.println("CIT: " + i);
-				else
-					System.out.println("NON HA AGGIUNTO: " + set.size());
-				*/
-				
+				 * if (set.add(this.UriToItem.get(s)))
+				 * System.out.println("CIT: " + i); else
+				 * System.out.println("NON HA AGGIUNTO: " + set.size());
+				 
+
 			}
 			System.out.println("LUNGHEZZA LISTA: " + list.size());
-//			Set<ItemReader> hSet = new TreeSet<ItemReader>(list); 
-//			System.out.println("LUNGHEZZA SET: " + hSet.size());
-			
-			return list.stream().collect(Collectors.toSet());
-		}
-		else
+			System.out.println("LUNGHEZZA SET: " + set.size());
+			// Set<ItemReader> hSet = new TreeSet<ItemReader>(list);
+			// System.out.println("LUNGHEZZA SET: " + hSet.size());
+
+			return set;*/
+		} else
 			throw new UnknownItemException();
-		
+
 	}
 
 	protected void loadGraph(Set<ItemReader> itemList) throws UnknownItemException {
@@ -194,11 +250,13 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			loadNodes(itemList);
 			loadRelationships(itemList);
 		}
-		
-//		for(Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()){
-//			System.out.println("URI: " + es.getKey() + " TITOLO: " + es.getValue().getTitle() + " SOTTOTIT: " + es.getValue().getSubtitle());
-//		}
-		
+
+		// for(Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()){
+		// System.out.println("URI: " + es.getKey() + " TITOLO: " +
+		// es.getValue().getTitle() + " SOTTOTIT: " +
+		// es.getValue().getSubtitle());
+		// }
+
 		return;
 	}
 
@@ -208,22 +266,21 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			MyNode node = new MyNode(); // new node
 
 			int id = 0;
-			
+
 			if (reader instanceof ArticleReader) {
-				
+
 				ArticleReader a = (ArticleReader) reader;
 
-				id = myHash(a.getJournal().getTitle(),
-						(a.getJournal().getISSN()));
-				
+				id = myHash(a.getJournal().getTitle(), (a.getJournal().getISSN()));
+
 				node.setCode(a.getJournal().getISSN());
 
 			} else if (reader instanceof BookReader) {
 
 				BookReader b = (BookReader) reader;
-				
+
 				id = myHash(b.getTitle(), b.getISBN());
-				
+
 				node.setCode(b.getISBN());
 
 			} else {
@@ -239,7 +296,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			result = insertNode(node); // insertion in Neo4j
 
 			// System.out.println("NODO: " + result.getSelf());
-			
+
 			this.itemToUri.put(id, URI.create(result.getSelf()));
 			this.UriToId.put(URI.create(result.getSelf()), id); // add it to the
 																// maps
@@ -252,14 +309,15 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	protected MyNodeBody insertNode(MyNode n) {
 
 		// System.out.println(serviceBaseUri + "/data/node");
-		
-		WebTarget target = this.client
-				.target(UriBuilder.fromUri(serviceBaseUri +/* ":" + serviceBasePort +*/ "/data/node"));
+
+		WebTarget target = this.client.target(UriBuilder
+				.fromUri(serviceBaseUri + /* ":" + serviceBasePort + */ "/data/node"));
 
 		Response response = target // base URI
 				.request() // define what types of data can be accepted
-				.accept(MediaType.APPLICATION_JSON).post(Entity.json(n)); // POST
-																			// invocation
+				.accept(MediaType.APPLICATION_JSON).post(Entity.json(n));
+
+		response.bufferEntity();
 
 		if (response.getStatus() != 201) {
 			System.out.println("Error: " + response.getStatus() + " " + response.getStatusInfo());
@@ -284,43 +342,41 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 				int idf = 0;
 
 				if (ci instanceof ArticleReader) {
-					
+
 					ArticleReader a = (ArticleReader) ci;
 
-					id = myHash(a.getJournal().getTitle(),
-							(a.getJournal().getISSN()));
+					id = myHash(a.getJournal().getTitle(), (a.getJournal().getISSN()));
 
 				} else if (ci instanceof BookReader) {
 
 					BookReader b = (BookReader) ci;
-					
+
 					id = myHash(b.getTitle(), b.getISBN());
 
 				}
 
 				if (i instanceof ArticleReader) {
-					
+
 					ArticleReader a = (ArticleReader) i;
 
-					idf = myHash(a.getJournal().getTitle(),
-							(a.getJournal().getISSN()));
+					idf = myHash(a.getJournal().getTitle(), (a.getJournal().getISSN()));
 
 				} else if (i instanceof BookReader) {
 
 					BookReader b = (BookReader) i;
-					
+
 					idf = myHash(b.getTitle(), b.getISBN());
 
 				}
-				
+
 				String fromid = this.idToNode.get(idf).getSelf();
 
 				URI uri = this.itemToUri.get(id); // URI of next place
 				relationship.setTo(uri.toString()); // set to
 				relationship.setType("CitedBy"); // connection type
 				MyRelationshipBody result = insertRelationship(relationship, fromid); // insertion
-																					// in
-																					// Neo4j
+																						// in
+																						// Neo4j
 
 				// System.out.println("Relationship: " + result.getStart() + " /
 				// " + result.getEnd());
@@ -336,13 +392,19 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 		Response res;
 		MyRelationshipBody rb;
-		
-		// System.out.println("URI RELAZIONI:  " + id + "/relationships");
 
-		WebTarget target = this.client.target(UriBuilder.fromUri(
-				/*serviceBaseUri + ":" + serviceBasePort + "/data/node/" + String.valueOf(id) */ id + "/relationships"));
+		// System.out.println("URI RELAZIONI: " + id + "/relationships");
+
+		WebTarget target = this.client.target(
+				UriBuilder.fromUri(/*
+									 * serviceBaseUri + ":" + serviceBasePort +
+									 * "/data/node/" + String.valueOf(id)
+									 */ id + "/relationships"));
 
 		res = target.request(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON).post(Entity.json(r));
+
+		res.bufferEntity();
+
 		if (res.getStatus() != 201) {
 			System.out.println("Error: " + res.getStatus() + " " + res.getStatusInfo());
 		}
@@ -360,5 +422,32 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 		return (hash1 * code.hashCode());
 	}
 
+}
 
+class comparing implements Comparator<Object> {
+
+	@Override
+	public int compare(Object o1, Object o2) {
+		ItemReader i1 = (ItemReader) o1;
+		ItemReader i2 = (ItemReader) o2;
+		
+		if(i1.getSubtitle()!=null && (i2.getSubtitle()==null || i2.getSubtitle().isEmpty()))
+			return 1;
+		
+		if((i1.getSubtitle()==null || i1.getSubtitle().isEmpty()) && i2.getSubtitle()!=null)
+			return 1;
+		
+		if((i1.getSubtitle()==null || i1.getSubtitle().isEmpty()) && (i2.getSubtitle()==null || i2.getSubtitle().isEmpty()))
+		{
+			if(i1.getTitle().equals(i2.getTitle()))
+				return 0;
+			else
+				return 1;
+		}
+		
+		if(i1.getTitle().equals(i2.getTitle()) && i1.getSubtitle().equals(i2.getSubtitle()))
+			return 0;
+		else
+			return 1;
+	}
 }
