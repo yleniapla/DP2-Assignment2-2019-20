@@ -1,15 +1,10 @@
 package it.polito.dp2.BIB.sol2;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.stream.Collectors;
 import java.net.URI;
 
 import it.polito.dp2.BIB.ArticleReader;
@@ -39,13 +34,13 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	private BibReaderFactory readFactory;
 
 	private Map<Integer, URI> itemToUri; // map itemID-URI
-	private Map<URI, Integer> UriToId; // map URI-itemID
 	private Map<Integer, MyNodeBody> idToNode; // map itemID-NodeBody
 	private Map<URI, ItemReader> UriToItem; // map URI-Item
-	private Set<URI> relations; // all relations in the system
+	private Set<URI> relations; // all citedby relationships in the system
 
 	public CitationFinder(Properties prop) throws BibReaderException, UnknownItemException {
 
+		// get both system properties
 		if (prop.getProperty("it.polito.dp2.BIB.ass2.URL") == null
 				|| prop.getProperty("it.polito.dp2.BIB.ass2.PORT") == null) {
 			throw new BibReaderException();
@@ -54,25 +49,22 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 		serviceBaseUri = prop.getProperty("it.polito.dp2.BIB.ass2.URL");
 		serviceBasePort = prop.getProperty("it.polito.dp2.BIB.ass2.PORT");
 
+		//initialization of all the interfaces and maps
 		this.readFactory = BibReaderFactory.newInstance();
 		this.monitor = this.readFactory.newBibReader();
-		this.client = ClientBuilder.newClient(); // create the Client object
-
+		this.client = ClientBuilder.newClient(); 
+		
 		this.itemToUri = new HashMap<Integer, URI>();
-		this.UriToId = new HashMap<URI, Integer>();
 		this.idToNode = new HashMap<Integer, MyNodeBody>();
 		this.UriToItem = new HashMap<URI, ItemReader>();
 		this.relations = new HashSet<URI>();
 
-		System.out.println("PARTE IL CARICAMENTO");
+		//create the neo4j graph with all the items in the biblio
 		loadGraph(this.monitor.getItems(null, 0, 9999));
 	}
 
 	@Override
 	public BookReader getBook(String arg0) {
-		// return
-		// UriToItem.values().stream().filter(BookReader.class::isInstance).map(BookReader.class::cast)
-		// .filter(b -> b.getISBN() == arg0).findFirst().get();
 		return this.monitor.getBook(arg0);
 	}
 
@@ -95,14 +87,15 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 	public Set<ItemReader> findAllCitingItems(ItemReader item, int maxDepth)
 			throws UnknownItemException, ServiceException {
 
-		if (this.UriToItem.containsValue(item)) {
-			// System.out.println("SOURCE: " + item.getTitle() + "LENGTH: " +
-			// maxDepth);
+		if (this.UriToItem.containsValue(item)) { //if the items whom requires exists
 
 			MyPathReq pathR = new MyPathReq();
+			
+			//check the value of maxdepth
 			if (maxDepth <= 0)
 				maxDepth = Integer.MAX_VALUE;
 
+			//fill the request body
 			MyPathReq.Relationships r = new MyPathReq.Relationships();
 
 			r.setDirection("out");
@@ -116,28 +109,19 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			if (item instanceof ArticleReader) {
 
 				ArticleReader a = (ArticleReader) item;
-
 				id = myHash(a.getJournal().getTitle(), (a.getJournal().getISSN()));
 
 			} else if (item instanceof BookReader) {
 
 				BookReader b = (BookReader) item;
-
 				id = myHash(b.getTitle(), b.getISBN());
 
 			}
 
 			URI uri = this.itemToUri.get(id);
-
-			System.out.println("ID TRAVERSE: " + uri.toString());
-
 			Response resp;
-			/*
-			 * WebTarget target =
-			 * this.client.target(UriBuilder.fromUri(serviceBaseUri+
-			 * "/data/node/" + id+ "/traverse/node"));
-			 */
-
+			
+			//request to neo4j
 			WebTarget target = this.client.target(UriBuilder.fromUri(uri + "/traverse/node"));
 
 			resp = target.request(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
@@ -146,99 +130,28 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 			if (resp == null || resp.getStatus() != 200)
 				throw new ServiceException();
 
-			for (Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()) {
-				System.out.println("URI: " + es.getKey() + " TITOLO: " + es.getValue().getTitle() + " SOTTOTIT: "
-						+ es.getValue().getSubtitle());
-			}
-
+			//check the result
 			MyPath[] citationPath = resp.readEntity(MyPath[].class);
 
-			//List<ItemReader> result = new ArrayList<>();
 			Set<ItemReader> result = new HashSet<>();
-	        for (MyPath node : citationPath) {
+	        for (MyPath node : citationPath) { //for each node in the result
 
-	            Set<ItemReader> matchingItems = this.getItems(node.getData().getTitle(), 0, 9999);
+	            Set<ItemReader> matchingItems = this.getItems(node.getData().getTitle(), 0, 9999); //get all the items with that title
 	            if (matchingItems.isEmpty()) throw new UnknownItemException();
 
-	            // useful when duplicated title is present, checking the subtitle (if present)
-	            ItemReader wanted = null;
-	            for (ItemReader temp : matchingItems) {
+	            for (ItemReader temp : matchingItems) { // if there is the subtitle checks also it
 	                if (node.getData().getSubtitle() != null && !node.getData().getSubtitle().isEmpty()) {
 	                    if (node.getData().getTitle().equals(temp.getTitle()) && node.getData().getSubtitle().equals(temp.getSubtitle())) {
-	                        wanted = temp;
 	                        result.add(temp);
 	                    }
-	                } else {
+	                } else { //or checks only the title
 	                    if (node.getData().getTitle().equals(temp.getTitle())) {
-	                        wanted = temp;
 	                        result.add(temp);
 	                    }
 	                }
-	                
-	                
 	            }
-	           
-	           /* boolean found = false;
-	            for (ItemReader inside : result) {
-	                if (inside.getSubtitle() != null && !inside.getSubtitle().isEmpty()
-	                        && wanted.getSubtitle() != null && !wanted.getSubtitle().isEmpty()) {
-	                    if ((inside.getTitle() + "<>" + inside.getSubtitle())
-	                            .equals(wanted.getTitle() + "<>" + wanted.getSubtitle())) {
-	                        found = true;
-	                        break;
-	                    }
-	                } else {
-	                    if (inside.getTitle().equals(wanted.getTitle())) {
-	                        found = true;
-	                        break;
-	                    }
-	                }
-	            }
-	            if (!found) {
-	                result.add(wanted);
-	            }*/
-
 	        }
 	        return result;
-			
-			///////////////////////////////////////////////////////////////////////////////////////////7
-			
-			
-			/*System.out.println("LUNGHEZZA RISP: " + citationPath.length);
-
-			if (citationPath == null) {
-				throw new ServiceException();
-			}
-
-			Set<ItemReader> set = new TreeSet<ItemReader>(new comparing());
-			List<ItemReader> list = new ArrayList<ItemReader>();
-
-			for (int i = 0; i < citationPath.length; i++) {
-				String s = citationPath[i].getSelf();
-				System.out.println("EL " + i + " : " + s);
-
-				// if(this.UriToItem.get(s).getTitle()!=null)
-				// System.out.println("TITOLO: " +
-				// this.UriToItem.get(s).getTitle());
-				// if(this.UriToItem.get(s).getSubtitle()!=null)
-				// System.out.println("SUB: " +
-				// this.UriToItem.get(s).getSubtitle());
-
-				list.add(this.UriToItem.get(s));
-				set.add(this.UriToItem.get(s));
-				
-				 * if (set.add(this.UriToItem.get(s)))
-				 * System.out.println("CIT: " + i); else
-				 * System.out.println("NON HA AGGIUNTO: " + set.size());
-				 
-
-			}
-			System.out.println("LUNGHEZZA LISTA: " + list.size());
-			System.out.println("LUNGHEZZA SET: " + set.size());
-			// Set<ItemReader> hSet = new TreeSet<ItemReader>(list);
-			// System.out.println("LUNGHEZZA SET: " + hSet.size());
-
-			return set;*/
 		} else
 			throw new UnknownItemException();
 
@@ -246,75 +159,61 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 	protected void loadGraph(Set<ItemReader> itemList) throws UnknownItemException {
 		if (itemList != null) {
-			// load nodes and relations
+			// load all nodes and relations
 			loadNodes(itemList);
 			loadRelationships(itemList);
 		}
-
-		// for(Map.Entry<URI, ItemReader> es : this.UriToItem.entrySet()){
-		// System.out.println("URI: " + es.getKey() + " TITOLO: " +
-		// es.getValue().getTitle() + " SOTTOTIT: " +
-		// es.getValue().getSubtitle());
-		// }
-
 		return;
 	}
 
 	protected void loadNodes(Set<ItemReader> itemList) throws UnknownItemException {
-		System.out.println("CARICO I NODI");
-		for (ItemReader reader : itemList) { // each place
-			MyNode node = new MyNode(); // new node
+		for (ItemReader reader : itemList) { // for each place
+			MyNode node = new MyNode(); // create a new node
 
 			int id = 0;
 
+			//get the id of the item based on the type
 			if (reader instanceof ArticleReader) {
 
 				ArticleReader a = (ArticleReader) reader;
-
 				id = myHash(a.getJournal().getTitle(), (a.getJournal().getISSN()));
-
-				node.setCode(a.getJournal().getISSN());
-
+				
 			} else if (reader instanceof BookReader) {
 
 				BookReader b = (BookReader) reader;
-
 				id = myHash(b.getTitle(), b.getISBN());
-
-				node.setCode(b.getISBN());
 
 			} else {
 				throw new UnknownItemException();
 			}
 
+			//set node propertied
 			node.setId(id);
 			node.setTitle(reader.getTitle());
 			node.setSubtitle(reader.getSubtitle());
 
 			MyNodeBody result;
-
-			result = insertNode(node); // insertion in Neo4j
-
-			// System.out.println("NODO: " + result.getSelf());
-
+			
+			// insertion in Neo4j
+			result = insertNode(node); 
+			
+			//fill the maps
 			this.itemToUri.put(id, URI.create(result.getSelf()));
-			this.UriToId.put(URI.create(result.getSelf()), id); // add it to the
-																// maps
 			this.idToNode.put(id, result);
 			this.UriToItem.put(URI.create(result.getSelf()), reader);
 		}
 
 	}
 
-	protected MyNodeBody insertNode(MyNode n) {
+	protected MyNodeBody insertNode(MyNode n) throws UnknownItemException {
 
-		// System.out.println(serviceBaseUri + "/data/node");
-
+		//service port seems to be always included in the base uri
 		WebTarget target = this.client.target(UriBuilder
 				.fromUri(serviceBaseUri + /* ":" + serviceBasePort + */ "/data/node"));
 
-		Response response = target // base URI
-				.request() // define what types of data can be accepted
+		//http request
+		Response response = target 
+				.request()
 				.accept(MediaType.APPLICATION_JSON).post(Entity.json(n));
 
 		response.bufferEntity();
@@ -325,22 +224,21 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 		MyNodeBody nb = response.readEntity(MyNodeBody.class);
 		if (nb == null) {
-			// throw new UnknownIdException("Exception during node uploading");
+			throw new UnknownItemException();
 		}
 
 		return nb;
 	}
 
 	protected void loadRelationships(Set<ItemReader> itemList) {
-		System.out.println("CARICO LE RELAZIONI");
 		for (ItemReader i : itemList) {
-			for (ItemReader ci : i.getCitingItems()) { // each next place
+			for (ItemReader ci : i.getCitingItems()) { // for each citation
 
-				MyRelationship relationship = new MyRelationship(); // new
-																	// relationship
+				MyRelationship relationship = new MyRelationship(); // create a new relationship
 				int id = 0;
 				int idf = 0;
 
+				//who cite
 				if (ci instanceof ArticleReader) {
 
 					ArticleReader a = (ArticleReader) ci;
@@ -355,6 +253,7 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 				}
 
+				//who is cited
 				if (i instanceof ArticleReader) {
 
 					ArticleReader a = (ArticleReader) i;
@@ -371,18 +270,12 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 				String fromid = this.idToNode.get(idf).getSelf();
 
-				URI uri = this.itemToUri.get(id); // URI of next place
-				relationship.setTo(uri.toString()); // set to
+				URI uri = this.itemToUri.get(id); // URI of who cite
+				relationship.setTo(uri.toString()); 
 				relationship.setType("CitedBy"); // connection type
-				MyRelationshipBody result = insertRelationship(relationship, fromid); // insertion
-																						// in
-																						// Neo4j
+				MyRelationshipBody result = insertRelationship(relationship, fromid); // insertion in Neo4j
 
-				// System.out.println("Relationship: " + result.getStart() + " /
-				// " + result.getEnd());
-
-				relations.add(URI.create(result.getSelf())); // save the new
-																// relation
+				relations.add(URI.create(result.getSelf())); // save the new relation
 			}
 		}
 
@@ -392,8 +285,6 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 		Response res;
 		MyRelationshipBody rb;
-
-		// System.out.println("URI RELAZIONI: " + id + "/relationships");
 
 		WebTarget target = this.client.target(
 				UriBuilder.fromUri(/*
@@ -424,30 +315,3 @@ public class CitationFinder implements it.polito.dp2.BIB.ass2.CitationFinder {
 
 }
 
-class comparing implements Comparator<Object> {
-
-	@Override
-	public int compare(Object o1, Object o2) {
-		ItemReader i1 = (ItemReader) o1;
-		ItemReader i2 = (ItemReader) o2;
-		
-		if(i1.getSubtitle()!=null && (i2.getSubtitle()==null || i2.getSubtitle().isEmpty()))
-			return 1;
-		
-		if((i1.getSubtitle()==null || i1.getSubtitle().isEmpty()) && i2.getSubtitle()!=null)
-			return 1;
-		
-		if((i1.getSubtitle()==null || i1.getSubtitle().isEmpty()) && (i2.getSubtitle()==null || i2.getSubtitle().isEmpty()))
-		{
-			if(i1.getTitle().equals(i2.getTitle()))
-				return 0;
-			else
-				return 1;
-		}
-		
-		if(i1.getTitle().equals(i2.getTitle()) && i1.getSubtitle().equals(i2.getSubtitle()))
-			return 0;
-		else
-			return 1;
-	}
-}
