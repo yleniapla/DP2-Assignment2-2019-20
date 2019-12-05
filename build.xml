@@ -238,7 +238,7 @@
 	<target name="make-zip" description="Make zip to be submitted">
 		<zip destfile="ass2.zip"
 			basedir="${ass2.location}"
-		    includes="custom/* xsd/*  src/it/polito/dp2/BIB/sol2/**/*.java sol-build.xml"
+		    includes="custom/* xsd/**  src/it/polito/dp2/BIB/sol2/**/*.java sol-build.xml"
 		/>
 	</target>
 
